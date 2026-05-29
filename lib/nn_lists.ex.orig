@@ -1,0 +1,114 @@
+defmodule ONN do
+  defmodule Layer do
+	  defstruct [
+      weights: [],
+      biases: []
+    ]
+  end
+
+  @inputs [
+     [0,0],
+     [1,0],
+     [0,1],
+     [1,1]
+   ]
+
+  @outputs [
+     [0],
+     [1],
+     [1],
+     [1]
+   ]
+  
+  @rate 0.001
+
+  def build_model(_, _, 0), do: []
+  def build_model(inputs, [], outputs), do: build_model(inputs, [outputs], nil)
+  def build_model(inputs, [layer | layers], outputs) do
+    [
+      %Layer{
+        weights: Enum.map(1..layer, fn _ ->
+          Enum.map(1..inputs, fn _ -> rand() end)
+        end),
+        biases: Enum.map(1..layer, fn _ -> rand() end)
+      }
+      |
+      build_model(layer, layers, outputs || 0)
+    ]
+  end
+
+  def train_model(model, inputs \\ @inputs, outputs \\ @outputs)
+  # def train_model(_, [], ), do: []
+  def train_model(model, inputs, outputs) do
+    new_outputs = feed_forward(model, inputs)
+    c = cost(outputs, new_outputs)
+    # finite_diff(model, c)
+    # model = learn(model)    
+  end
+
+  def feed_forward(layers, []), do: []
+  def feed_forward(layers, [input | inputs]) do
+    [feed_forward_h(layers, input)] ++ feed_forward(layers, inputs)
+  end
+  
+  def feed_forward_h([], input), do: input
+  def feed_forward_h([layer | layers], input) do
+    input = feed_forward_neuron(input, layer.weights, layer.biases)
+    feed_forward_h(layers, input)
+  end
+
+  def feed_forward_neuron(_, [], _), do: []
+  def feed_forward_neuron(input, [n_ws | weights], [b | biases]) do
+    [sigmoid(sum_up(input, n_ws) + b) | feed_forward_neuron(input, weights, biases)]
+  end
+
+  def cost(outputs, new_outputs),
+      do: cost(outputs, new_outputs, length(outputs)*(outputs |> hd() |> length()), 0)
+  def cost([], _, count, sum), do: sum / count
+  def cost([o | outputs], [no | new_outputs], count, sum) do
+    cost(outputs, new_outputs, count, sum + distance(o, no))
+  end
+
+  def distance([], []), do: 0
+  def distance([o|oo], [no|nono]) do
+    :math.pow(o - no, 2) + distance(oo, nono)
+  end 
+
+  # def finite_diff([], c), do: []
+  # def finite_diff([layer | layers]) do
+  #   [
+  #     layer
+  #     |> update_in([:weights], fn weights ->
+  #       Enum.map(weights, fn ws -> Enum.map(ws, fn w -> w*rate end) end) 
+  #     end)
+  #     |> update_in([:biases], fn bs -> Enum.map(bs, fn b -> b*rate end) end)
+      
+  #     |
+  #     finite_diff(layers)
+  #   ]
+  # end
+
+  # def learn([]), do: []
+  # def learn([layer | layers]) do
+  #   [
+  #     layer
+  #     |> update_in([:weights], fn weights ->
+  #       Enum.map(weights, fn ws -> Enum.map(ws, fn w -> w*rate end) end) 
+  #     end)
+  #     |> update_in([:biases], fn bs -> Enum.map(bs, fn b -> b*rate end) end)
+      
+  #     |
+  #     learn(layers)
+  #   ]
+  # end
+  ################################################################################################
+  ## Private tools
+  ################################################################################################
+
+  defp rand(start \\ 0, len \\ 1), do: :rand.uniform()*len + start
+
+  defp sum_up(_, []), do: 0
+  defp sum_up([i | inp], [w | ws]), do: i*w + sum_up(inp, ws)
+
+  defp sigmoid(val), do: 1 / (1 + :math.exp(-val))
+end
