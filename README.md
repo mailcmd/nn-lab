@@ -1,7 +1,7 @@
 # NN
 
-## With connections
-
+## Pure garbage
+```
   n0, i0
   n0, i1
   n1, i0
@@ -49,3 +49,4 @@
     ],
     [ ... ]        # layer_1
 ]
+```
