@@ -1,3 +1,4 @@
+<h1>Don't try to make sense of what's here; these are just my chaotic experiments. </h1>
 # NN
 
 ## Pure garbage
