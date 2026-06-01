@@ -151,13 +151,12 @@ defmodule NN3 do
 
   def train_model(model, 0, _, _, _), do: model
   def train_model(model, count, lt_inputs,lt_outputs, total) do
-    cost = eval_model(model, lt_inputs, lt_outputs)
-    IO.puts "Iteration: #{total - count + 1} - Cost: #{cost}"
+    # IO.puts "Iteration: #{total - count + 1} - Cost: #{cost}"
 
     model
-    |> finite_diff(cost, lt_inputs, lt_outputs)
-    |> learn(model)
-    |> train_model(count - 1, lt_inputs, lt_outputs, total)
+    |> back_propagation(lt_inputs, lt_outputs)
+    # |> learn(model)
+    # |> train_model(count - 1, lt_inputs, lt_outputs, total)
   end
 
   def run_model(model, input) when is_list(input) do
@@ -215,88 +214,87 @@ defmodule NN3 do
     calc_cost(lt_new_outputs, lt_outputs, sum, count + 1)
   end
 
-  def finite_diff(model, cost, lt_inputs, lt_outputs) do
-    %Model{layers: layers} = model
+  defp forward(ln_layer, t_input, act_func) do
+    t_output =
+      Enum.map(ln_layer, fn neuron ->
+        t_input
+        |> Nx.take(neuron.connections)
+        |> Nx.multiply(neuron.weights)
+        |> Nx.sum(axes: [:weights])
+        |> Nx.add(neuron.bias)
+        |> Nx.tensor()
+      end)
+      |> Nx.concatenate()
+      |> Nx.rename([nil])
 
-    layers_weights =
-      layers
+    # {z, a} -> {layer_output, activation(layer_output)}
+    {t_output, apply(Activation, act_func, [t_output])}
+  end
+
+  defp backward(layers, zas, deltas, rate, result \\ [])
+  defp backward(_, [], _, _, result), do: result
+  defp backward([ln_layer | layers], [{_, t_a} | zas], deltas, rate, result) do
+    grads =
+      ln_layer
       |> Enum.with_index()
-      |> Enum.map(fn {ln_layer, i} ->
-        ln_layer
-        |> Enum.with_index()
-        |> Enum.map(fn {neuron, r} ->
-          {n} = Nx.shape(neuron.weights)
-          Enum.map(0..n-1, fn c ->
-            # Set  weight + eps and get the cost of new model
-            w =
-              neuron.weights
-              |> Nx.take(c)
-              |> Nx.add(model.eps)
-              |> Nx.to_number()
-
-            neuron = %{neuron | weights: Nx.indexed_put(neuron.weights, Nx.tensor([c]), w)}
-            ln_layer = List.replace_at(ln_layer, r, neuron)
-
-            n_cost_p =
-              %Model{model | layers: List.replace_at(layers, i, ln_layer)}
-              |> eval_model(lt_inputs, lt_outputs)
-
-            w =
-              neuron.weights
-              |> Nx.take(c)
-              |> Nx.subtract(model.eps)
-              |> Nx.to_number()
-
-            neuron = %{neuron | weights: Nx.indexed_put(neuron.weights, Nx.tensor([c]), w)}
-            ln_layer = List.replace_at(ln_layer, r, neuron)
-
-            n_cost_m =
-              %Model{model | layers: List.replace_at(layers, i, ln_layer)}
-              |> eval_model(lt_inputs, lt_outputs)
-
-            # Calcule new weight in function of eval result moving toward better cost
-            ((n_cost_p - n_cost_m) / (2*model.eps))
-          end)
-        end)
+      |> Enum.map(fn {_, i} ->
+        t1 = Nx.take(t_a, i)
+        t2 = Nx.take(deltas, i)
+        {Nx.multiply(t1, t2), t2}
       end)
 
-    layers_biases =
-      layers
+    {_, ws_b} =
+      Enum.reduce(ln_layer, {grads, []}, fn n_layer, {[{grad_ws, grad_b} | grads], acc} ->
+        ws =
+          n_layer.weights
+          |> Nx.subtract(Nx.dot(grad_ws, rate))
+
+        b = 
+          n_layer.bias
+          |> Nx.rename([nil])
+          |> Nx.subtract(Nx.dot(grad_b, rate))
+          |> Nx.rename([:bias])
+        {grads, acc ++ [{ws, b, n_layer.connections}]}
+      end) 
+
+    deltas =
+      ln_layer
       |> Enum.with_index()
-      |> Enum.map(fn {ln_layer, i} ->
-        ln_layer
-        |> Enum.with_index()
-        |> Enum.map(fn {neuron, r} ->
-          {n} = Nx.shape(neuron.bias)
-          Enum.map(0..n-1, fn _ ->
-            # Set  weight + eps and get the cost of new model
-            b =
-              neuron.bias
-              |> Nx.add(model.eps)
-
-            neuron = %{neuron | bias: b}
-            ln_layer = List.replace_at(ln_layer, r, neuron)
-
-            n_cost =
-              %Model{model | layers: List.replace_at(layers, i, ln_layer)}
-              |> eval_model(lt_inputs, lt_outputs)
-
-            # Calcule new weight in function of eval result moving toward better cost
-            ((n_cost - cost) / model.eps)
-          end)
-        end)
+      |> Enum.reduce(nil, fn {n_layer, i}, t ->
+        t1 = Nx.multiply(n_layer.weights, deltas)
+        t2 = t_a |> Nx.take(i) |> Nx.pow(2) |> Nx.subtract(-1) |> Nx.dot(-1)
+        t3 = Nx.multiply(t1, t2)
+        t && Nx.stack([t, t3]) || t3
       end)
+    
+    backward(layers, zas, deltas, rate, [ws_b | result])
+  end
+  
+  def back_propagation(model, [t_inputs | lt_inputs], [t_outputs | lt_outputs]) do
+    back_propagation_h(model, t_inputs, t_outputs)
+  end
+  defp back_propagation_h(model, t_inputs, t_outputs) do
+    %Model{layers: layers, act_func: act_func} = model
 
-    layers_connections =      
-      Enum.map(layers, fn ln_layer ->
-        Enum.map(ln_layer, fn neuron ->
-          Nx.to_list(neuron.connections)
-        end)
-      end)
+    # First do forward operation and get all zs and as
+    # zas -> [{z_layer_n, a_layer_n}, ..., {z_layer_2, a_layer_2}, {z_layer_1, a_layer_1}]
+    {zas, _} = Enum.reduce(layers, {[{t_inputs, t_inputs}], t_inputs}, fn ln_layer, {r_zas, t_inputs} ->
+      {_, a_output} = za = forward(ln_layer, t_inputs, act_func)
+      {[za | r_zas], a_output}
+    end)
+
+    # Second calculate the output delta
+    [{_, t_a} | zas] = zas
+    t1 = Nx.subtract(t_a, t_outputs)
+    t2 = t_a |> Nx.pow(2) |> Nx.subtract(-1) |> Nx.dot(-1)
+    deltas_o = Nx.multiply(t1, t2)
+
+    rlayers = Enum.reverse(layers)    
 
     {opts, _} = model |> Map.to_list |> Keyword.split([:eps, :rate, :act_func])
-    layers_weights
-    |> :lists.zip3(layers_biases, layers_connections)
+    
+    rlayers
+    |> backward(zas, deltas_o, model.rate)
     |> build_model(opts)
   end
 
