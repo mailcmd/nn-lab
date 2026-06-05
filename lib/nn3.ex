@@ -68,6 +68,8 @@ defmodule NN3 do
     end
     map = model.map_output_func
 
+    output_act_func = model.act_funcs |> Enum.reverse() |> hd()
+
     [
       {"input", "expected", "rounded out", "raw out"}
       |
@@ -75,7 +77,7 @@ defmodule NN3 do
         |> Enum.zip(outputs)
         |> Enum.reduce({[], 0, 0}, fn {inp, out}, {list, hits, costs} ->
           rv = model |> run_model(inp) |> Nx.to_list()
-          cost = calc_cost(rv, out)
+          cost = calc_cost(output_act_func, rv, out)
           exp_out = Enum.map(out, fn v -> map.(v) end)
           got_out = Enum.map(rv, fn v -> map.(v) end)
           # {[{inp, exp_out, got_out, rv} | list], costs + cost}
@@ -131,7 +133,7 @@ defmodule NN3 do
         batch_mode: Keyword.get(opts, :batch_mode, true),
         act_funcs: act_funcs,
         shape: List.flatten([inputs, layers, outputs]),
-        ranges: calc_range(act_func, inputs, outputs),
+        # ranges: calc_range(act_func, inputs, outputs),
         layers: build_model_layers(total_layers),
         map_output_func: map_output_func
       }
@@ -160,7 +162,7 @@ defmodule NN3 do
     # key = Nx.Random.key(System.os_time())
     key = Nx.Random.key(1972)
     %Model{layers: layers} = model
-    n_inputs = hd(model.shape)
+    # n_inputs = hd(model.shape)
     n_outputs = List.last(model.shape)
 
     layers =
@@ -170,7 +172,8 @@ defmodule NN3 do
         {{w_ini, w_end}, {b_ini, b_end}} =
           model.act_funcs
           |> Enum.at(i)
-          |> calc_range(n_inputs, n_outputs)
+          # |> calc_range(n_inputs, n_outputs)
+          |> calc_range(layers |> Enum.at(i-1) |> length(), n_outputs)
         {
           key,
           new_layers ++ [
@@ -426,7 +429,8 @@ defmodule NN3 do
   end
 
   defp eval_and_report({model, lt_new_outputs, _}, lt_outputs, count, total) do
-    cost = calc_cost(lt_new_outputs, lt_outputs)
+    output_act_func = model.act_funcs |> Enum.reverse() |> hd()
+    cost = calc_cost(output_act_func, lt_new_outputs, lt_outputs)
     IO.puts "Iteration: #{total - count + 1} - Cost: #{cost}"
     model
   end
@@ -484,9 +488,27 @@ defmodule NN3 do
     list_update(connections, target, fn cn -> [from | cn] |> Enum.sort() |> Enum.uniq() end)
   end
   
-  defp calc_cost(lt_new_outputs, lt_outputs, sum \\ 0, count \\ 0)
-  defp calc_cost([], [], sum, count), do: sum / count
-  defp calc_cost([no | lt_new_outputs], [o | lt_outputs], sum, count) do
+  defp calc_cost(act_func, lt_new_outputs, lt_outputs, sum \\ 0, count \\ 0)
+  ## for softmax
+  # defp calc_cost(:softmax, _, _, sum, 5) do
+  #   (-sum / 5) |> IO.inspect
+  #   raise("FUCK!!!!")
+  # end  
+  defp calc_cost(:softmax, [], [], sum, count), do: -sum / count
+  defp calc_cost(:softmax, [no | lt_new_outputs], [o | lt_outputs], sum, count) do
+    sum =
+      no
+      |> Nx.log()
+      |> Nx.multiply(o)
+      |> Nx.sum()
+      |> Nx.add(sum)
+      |> Nx.to_number()
+    
+    calc_cost(:softmax, lt_new_outputs, lt_outputs, sum, count + 1)
+  end
+  ## for the rest
+  defp calc_cost(_, [], [], sum, count), do: sum / count
+  defp calc_cost(act_func, [no | lt_new_outputs], [o | lt_outputs], sum, count) do
     sum =
       no
       |> Nx.subtract(o)
@@ -494,11 +516,15 @@ defmodule NN3 do
       |> Nx.sum()
       |> Nx.add(sum)
       |> Nx.to_number()
-    calc_cost(lt_new_outputs, lt_outputs, sum, count + 1)
+    calc_cost(act_func, lt_new_outputs, lt_outputs, sum, count + 1)
   end
 
   # return {range_for_weights, range_for_biases}
   defp calc_range(:tanh, n_inputs, n_outputs) do
+    range = :math.sqrt(6 / (n_inputs + n_outputs))
+    {{-range, range}, {0, :math.sqrt(2 / (n_inputs + n_outputs))}}
+  end
+  defp calc_range(:softmax, n_inputs, n_outputs) do
     range = :math.sqrt(6 / (n_inputs + n_outputs))
     {{-range, range}, {0, :math.sqrt(2 / (n_inputs + n_outputs))}}
   end

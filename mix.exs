@@ -21,7 +21,8 @@ defmodule NN.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
-      {:nx, "~> 0.9"}
+      {:nx, "~> 0.9"},
+      {:scidata, "~> 0.1"}
     ]
   end
 end
