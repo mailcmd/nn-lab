@@ -413,45 +413,78 @@ inputs = [[0,0],[0,1],[1,0],[1,1]]
 outputs = [[0],[0],[0],[1]]
 
 
-target: #Nx.Tensor<
-  f32[3]
-  [0.0, 1.0, 0.0]
->
-target: #Nx.Tensor<
-  f32[3]
-  [0.0, 1.0, 0.0]
->
-target: #Nx.Tensor<
-  f32[3]
-  [0.0, 0.0, 1.0]
->
-target: #Nx.Tensor<
-  f32[3]
-  [0.0, 0.0, 1.0]
->
-target: #Nx.Tensor<
-  f32[3]
-  [0.0, 0.0, 1.0]
->
+{features, labels} = Scidata.Iris.download()
+indices = 0..149 |> Enum.shuffle()
+train_indices = Enum.take(indices, 120)
+test_indices = Enum.drop(indices, 120)
 
-a: #Nx.Tensor<
-  f32[3]
-  [0.58726996, 0.33228046, 0.08044958]
->
-a: #Nx.Tensor<
-  f32[3]
-  [0.5689425, 0.35199645, 0.07906104]
->
-a: #Nx.Tensor<
-  f32[3]
-  [0.60393524, 0.3280162, 0.06804856]
->
-a: #Nx.Tensor<
-  f32[3]
-  [0.59608454, 0.3346589, 0.06925657]
->
-a: #Nx.Tensor<
-  f32[3]
-  [0.62234396, 0.31381255, 0.063843444]
->
+## separo train of test
+x_train = train_indices |> Enum.map(fn i -> Enum.at(features, i) end)
+x_test = test_indices |> Enum.map(fn i -> Enum.at(features, i) end)
+y_train = train_indices |> Enum.map(fn i -> Enum.at(labels, i) end)
+y_test = test_indices |> Enum.map(fn i -> Enum.at(labels, i) end)
 
+
+## convert outputs
+y_train = y_train |> Enum.map(fn n -> Integer.to_string(n,2) |> String.pad_leading(3, "0") |> String.split("", trim: true) |> Enum.map(&String.to_integer/1) end)
+y_test = y_test |> Enum.map(fn n -> Integer.to_string(n,2) |> String.pad_leading(3, "0") |> String.split("", trim: true) |> Enum.map(&String.to_integer/1) end)
+
+## normalize inputs
+max = Nx.concatenate([Nx.tensor(x_train), Nx.tensor(x_test)]) |> Nx.reduce_max(axes: [0])
+min = Nx.concatenate([Nx.tensor(x_train), Nx.tensor(x_test)]) |> Nx.reduce_min(axes: [0])
+
+x_train = x_train |> Enum.map(fn t -> Nx.subtract(Nx.dot(Nx.divide(Nx.subtract(Nx.tensor(t), min), Nx.subtract(max, min)),2),1) end)
+x_test = x_test |> Enum.map(fn t -> Nx.subtract(Nx.dot(Nx.divide(Nx.subtract(Nx.tensor(t), min), Nx.subtract(max, min)),2),1) end)
+
+x_train = x_train |> Enum.map(fn t -> Nx.divide(Nx.subtract(Nx.tensor(t), min), Nx.subtract(max, min)) end)
+x_test = x_test |> Enum.map(fn t -> Nx.divide(Nx.subtract(Nx.tensor(t), min), Nx.subtract(max, min)) end)
+
+
+## train 
+model = NN3.build_model({4,12,3}, rate: 0.3, act_func: :tanh, output_act_func: :softmax, batch_mode: true, map_output_func: &round/1)
+model2 = NN3.train_model(model, 2000, x_train, y_train)
+NN3.test(model2, x_test, y_test)
+
+Test 1:
+Iteration: 2000 - Cost: 0.1876574675242106
+HITS: 90.0% - AVG COST: 0.05579695788263861
+
+Test 2: 
+Iteration: 2000 - Cost: 0.16073145866394042
+HITS: 96.66666666666667% - AVG COST: 0.049029032673246965
+
+Test 3:
+Iteration: 2000 - Cost: 0.1765014330546061
+HITS: 96.66666666666667% - AVG COST: 0.049482178071048113
+
+## NN4 (tensors versions)
+
+[ 
+  %Neurons{
+    weights: Nx.tensor(
+        [w,w,w,w,w,w,w...,w],    \
+        [w,w,w,w,w,w,w...,w],     |
+        [w,w,w,w,w,w,w...,w],     |
+        [w,w,w,w,w,w,w...,w],     |
+        [w,w,w,w,w,w,w...,w],     |- N neurons weigths
+        [w,w,w,w,w,w,w...,w],     |
+        [w,w,w,w,w,w,w...,w],     |
+        ...                       |
+        [w,w,w,w,w,w,w...,w]     /
+    ),
+    biases: Nx.tensor(
+        [b,b,b,b,b,b,..,b]   ---> N biases
+    ),
+    connections: [
+        [0,1,2,3...,X],    \
+        [0,1,2,3...,X],     |
+        [0,1,2,3...,X],     |
+        [0,1,2,3...,X],     |
+        [0,1,2,3...,X],     |- N connections 
+        [0,1,2,3...,X],     |
+        [0,1,2,3...,X],     |
+        ...                 |
+        [0,1,2,3...,X]     /
+    ]
+  }
+]

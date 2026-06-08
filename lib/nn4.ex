@@ -1,4 +1,4 @@
-defmodule NN3 do
+defmodule NN4 do
   defmodule Model do
 	  defstruct [
       layers: nil,
@@ -11,10 +11,10 @@ defmodule NN3 do
     ]
   end
 
-  defmodule Neuron do
+  defmodule Neurons do
 	  defstruct [
       weights: nil,
-      bias: nil,
+      biases: nil,
       connections: []
     ]
   end
@@ -22,11 +22,6 @@ defmodule NN3 do
   defmodule Activation do
     import Nx.Defn
 
-    # defn softmax(z) do
-    #   max_z = Nx.reduce_max(z) 
-    #   exp_z = Nx.exp(z - max_z) 
-    #   exp_z / Nx.sum(exp_z)
-    # end
     defn softmax(z) do
       max_z = Nx.reduce_max(z, axes: [0], keep_axes: true)
       exp_z = Nx.exp(Nx.subtract(z, max_z))
@@ -53,20 +48,6 @@ defmodule NN3 do
 
   @default_rate 0.1
   @default_act_func :tanh
-
-  @inputs [
-     [0,1],
-     [0,0],
-     [1,0],
-     [1,1]
-   ]
-
-  @outputs [
-     [-1],
-     [-1],
-     [-1],
-     [1]
-   ]
 
   def test(model, inputs, outputs \\ nil) do
     fun = fn {list, hits, costs} ->
@@ -108,14 +89,14 @@ defmodule NN3 do
   end
 
   @doc """
-  act_funcs: list(:sigmoid | :tanh | :relu)  (def. :tanh)
+  act_funcs: list(:sigmoid | :tanh | :relu | :softmax)  (def. :tanh)
   connections: :all | :none | list()  (def. :all)
   """
   def build_model({inputs, layers, outputs}, opts) when not is_list(layers),
       do: build_model({inputs, [layers], outputs}, opts)
   def build_model({inputs, layers, outputs}, opts) do
     total_layers =
-      [layers, outputs]
+      [inputs, layers, outputs]
       |> List.flatten()
       |> Enum.filter(&(&1 != 0))
 
@@ -133,105 +114,71 @@ defmodule NN3 do
         _ -> build_all_connections(inputs, layers, outputs)
       end
 
-    model =
-      %Model{
-        rate: Keyword.get(opts, :rate, @default_rate),
-        batch_mode: Keyword.get(opts, :batch_mode, true),
-        act_funcs: act_funcs,
-        shape: List.flatten([inputs, layers, outputs]),
-        layers: build_model_layers(total_layers),
-        map_output_func: map_output_func
-      }
-
-    update_model_connections(connections, model)
+    %Model{
+      rate: Keyword.get(opts, :rate, @default_rate),
+      batch_mode: Keyword.get(opts, :batch_mode, true),
+      act_funcs: act_funcs,
+      shape: List.flatten([inputs, layers, outputs]),
+      layers: build_model_layers(total_layers, connections, act_funcs, outputs),
+      map_output_func: map_output_func
+    }
   end
 
-  defp build_model_layers([]), do: []
-  defp build_model_layers([len | shape]) do
-    [
-      Enum.map(0..len-1, fn _ ->
-          %Neuron{
-            weights: [],
-            bias: nil,
-            connections: []
-          }
-      end)
-      |
-      build_model_layers(shape)
-    ]
-
-  end
-
-  def update_model_connections([], model), do: model
-  def update_model_connections(connections, model) do
+  defp build_model_layers(layers_list, connections, act_funcs, outputs) do
     key = Nx.Random.key(System.os_time())
     # key = Nx.Random.key(1972)
-    %Model{layers: layers} = model
-    n_outputs = List.last(model.shape)
+    Enum.reduce(1..length(layers_list)-1, {[], key}, fn i, {layers, key} ->
+      neurons_count = Enum.at(layers_list, i)
+      weights_count = Enum.at(layers_list, i-1)
+      
+      {{w_ini, w_end}, {b_ini, b_end}} =
+          act_funcs
+          |> Enum.at(i-1)
+          |> calc_range(neurons_count, outputs)
 
-    layers =
-      layers
-      |> Enum.with_index()
-      |> Enum.reduce({key,[]}, fn {layer, i}, {key, new_layers} ->
-        {{w_ini, w_end}, {b_ini, b_end}} =
-          model.act_funcs
-          |> Enum.at(i)
-          |> calc_range(layers |> Enum.at(i-1) |> length(), n_outputs)
-        {
+      {weights, key} =
+        Nx.Random.uniform(
           key,
-          new_layers ++ [
-            layer
-            |> Enum.with_index()
-            |> Enum.reduce({key, []}, fn {neuron, j}, {key, new_layer} ->
-              {key, new_neuron} =
-                case list_get(connections, [i,j]) do
-                  [] ->
-                    {key, neuron}
-                  conns ->
-                    {weights, key} =
-                      Nx.Random.uniform(key, w_ini, w_end,
-                                        shape: {length(conns)}, names: [:weights])
-                    {bias, key} =
-                      Nx.Random.normal(key, b_ini, b_end, shape: {1}, names: [:bias])
+          w_ini, w_end,
+          shape: {neurons_count, weights_count},
+          names: [:neuron, :weights]
+        )
 
-                    {
-                      key,
-                      %{
-                        neuron |
-                          connections: conns,
-                          weights: weights,
-                          bias: bias
-                      }
-                    }
-                end
+      {biases, key} =
+        Nx.Random.uniform(
+          key,
+          b_ini, b_end,
+          shape: {neurons_count, 1},
+          names: [:neuron, :biases]
+        )
 
-              {
-                key,
-                new_layer ++ [ new_neuron ]
-              }
-            end)
-          ]
-        }
-      end)
-      |> elem(1)
-      |> Enum.map(fn {_, l} -> l end)
-
-    %{model | layers: layers}
+      {
+        layers ++ [
+          %Neurons{
+            weights: weights,
+            biases: biases,
+            connections: Enum.at(connections, i-1)
+          }
+        ],
+        key
+      }
+    end)
+    |> elem(0)
   end
 
   def train_model(
         model,
+        inputs,
+        outputs,
         count \\ 500,
-        inputs \\ @inputs,
-        outputs \\ @outputs,
         opts \\ [],
         total \\ 0,
         cost \\ 99999)
-  def train_model(model, count, inputs, outputs, opts, _, cost)
+  def train_model(model, inputs, outputs, count, opts, _, cost)
       when is_list(hd(inputs)) or is_list(hd(outputs)) do
     lt_inputs = Enum.map(inputs, fn inp -> Nx.tensor(inp, type: :f32) end)
     lt_outputs = Enum.map(outputs, fn outp -> Nx.tensor(outp, type: :f32) end)
-    train_model(model, count, lt_inputs, lt_outputs, opts, count, cost)
+    train_model(model, lt_inputs, lt_outputs, count, opts, count, cost)
   end
 
   def train_model(model, 0, _, _, _, _, _), do: model
@@ -492,40 +439,6 @@ defmodule NN3 do
     ]
   end
 
-  def connect(%Model{} = model, from, to) do
-    %Model{layers: layers} = model
-    Enum.map(layers, fn layer ->
-      Enum.map(layer, fn neuron -> neuron.connections end)
-    end)
-    |> connect_h(model, from, to)
-    |> update_model_connections(model)
-  end
-  def connect_h(connections, model, from, to) do
-    output = "#{List.last(model.shape)},"
-    target =
-      to
-      |> String.replace("output", output)
-      |> String.replace("layer", "")
-      |> String.replace("][", ",")
-      |> String.replace("[", "")
-      |> String.replace("]", "")
-      |> String.split(",")
-      |> Enum.map(&String.to_integer/1)
-
-    from =
-      from
-      |> String.replace("input", "")
-      |> String.replace("layer", "")
-      |> String.replace("][", ",")
-      |> String.replace("[", "")
-      |> String.replace("]", "")
-      |> String.split(",")
-      |> Enum.map(&String.to_integer/1)
-      |> Enum.reverse()
-      |> hd()
-
-    list_update(connections, target, fn cn -> [from | cn] |> Enum.sort() |> Enum.uniq() end)
-  end
   
   defp calc_cost(act_func, lt_new_outputs, lt_outputs, sum \\ 0, count \\ 0)
   ## for softmax
