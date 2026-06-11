@@ -164,8 +164,8 @@ defmodule NN3 do
 
   def update_model_connections([], model), do: model
   def update_model_connections(connections, model) do
-    key = Nx.Random.key(System.os_time())
-    # key = Nx.Random.key(1972)
+    # key = Nx.Random.key(System.os_time())
+    key = Nx.Random.key(1972)
     %Model{layers: layers} = model
     n_outputs = List.last(model.shape)
 
@@ -326,7 +326,7 @@ defmodule NN3 do
           t2 = derivative(other, t_z, t_a, t_outputs)
           Nx.multiply(t1, t2)
       end
-
+    
     grads_list =
       layers
       |> Enum.reverse()
@@ -350,6 +350,7 @@ defmodule NN3 do
       grads_list) do
 
     # deltas |> IO.inspect(label: "DELTAS")
+    # t_a |> IO.inspect(label: "T_A")
     # layers |> IO.inspect(label: "LAYERS")
     # ln_layer |> IO.inspect(label: "LAYER")
 
@@ -416,9 +417,9 @@ defmodule NN3 do
             ws =
               n_layer.weights
               |> Nx.subtract(
-                grad_ws
+                grad_ws 
                 |> Nx.divide(grads_count)
-                |> Nx.dot(model.rate) # * (0.99**iteration))
+                |> Nx.dot(model.rate)
               )
 
             b =
@@ -427,7 +428,7 @@ defmodule NN3 do
               |> Nx.subtract(
                 grad_b
                 |> Nx.divide(grads_count)
-                |> Nx.dot(model.rate) # * (0.99**iteration))
+                |> Nx.dot(model.rate) 
               )
               |> Nx.rename([:bias])
             %{n_layer | weights: ws, bias: b}

@@ -7,7 +7,8 @@ defmodule NN4 do
       shape: nil,
       map_output_func: nil,
       shuffle: true,
-      batch_mode: false
+      batch_mode: false,
+      _temp: %{}
     ]
   end
 
@@ -28,7 +29,7 @@ defmodule NN4 do
       sum_exp = Nx.sum(exp_z, axes: [0], keep_axes: true)
       Nx.divide(exp_z, sum_exp)
     end
-    
+
     defn relu(z) do
       Nx.max(0, z)
     end
@@ -40,7 +41,7 @@ defmodule NN4 do
     defn tanh(z) do
       Nx.tanh(z)
     end
-    
+
     defn none(z) do
       z
     end
@@ -64,8 +65,8 @@ defmodule NN4 do
         inputs
         |> Enum.zip(outputs)
         |> Enum.reduce({[], 0, 0}, fn {inp, out}, {list, hits, costs} ->
-          rv = model |> run_model(inp) #|> Nx.to_list()
-          cost = calc_cost(output_act_func, rv, out)
+          rv = model |> run_model(inp) 
+          cost = calc_cost(output_act_func, [rv], [Nx.tensor(out)])
           rv = rv |> Nx.to_list()
           exp_out = Enum.map(out, fn v -> map.(v) end)
           got_out = Enum.map(rv, fn v -> map.(v) end)
@@ -89,8 +90,12 @@ defmodule NN4 do
   end
 
   @doc """
-  act_funcs: list(:sigmoid | :tanh | :relu | :softmax)  (def. :tanh)
-  connections: :all | :none | list()  (def. :all)
+  :act_func        -> :sigmoid | :tanh | :relu | :softmax  (def. :tanh)
+  :output_act_func -> :sigmoid | :tanh | :relu | :softmax  (def. act_func)
+  :map_output_func -> function to decode output (def. fn v -> v end)
+  :rate            -> default learning rate if not set in train_model call (def @default_rate)
+  :batch_mode      -> if true process gradients in batch (def. true)
+  :shuffle         -> if true shuffle input in every epoch (def. true)
   """
   def build_model({inputs, layers, outputs}, opts) when not is_list(layers),
       do: build_model({inputs, [layers], outputs}, opts)
@@ -104,15 +109,15 @@ defmodule NN4 do
 
     act_func = Keyword.get(opts, :act_func, @default_act_func)
     output_act_func = Keyword.get(opts, :output_act_func, act_func)
-    act_funcs = Enum.map(1..length(hidden_layers)//1, fn _ -> act_func end) ++ [output_act_func] 
+    act_funcs = Enum.map(1..length(hidden_layers)//1, fn _ -> act_func end) ++ [output_act_func]
     map_output_func = Keyword.get(opts, :map_output_func, fn v -> v end)
 
-    connections =
-      case Keyword.get(opts, :connections, :all) do
-        :none -> []
-        list when is_list(list) -> list
-        _ -> build_all_connections(inputs, layers, outputs)
-      end
+    connections = []
+      # case Keyword.get(opts, :connections, :all) do
+      #   :none -> []
+      #   list when is_list(list) -> list
+      #   _ -> build_all_connections(inputs, layers, outputs)
+      # end
 
     %Model{
       rate: Keyword.get(opts, :rate, @default_rate),
@@ -125,12 +130,13 @@ defmodule NN4 do
   end
 
   defp build_model_layers(layers_list, connections, act_funcs, outputs) do
-    key = Nx.Random.key(System.os_time())
-    # key = Nx.Random.key(1972)
+    # key = Nx.Random.key(System.os_time())
+    key = Nx.Random.key(1972)
     Enum.reduce(1..length(layers_list)-1, {[], key}, fn i, {layers, key} ->
+      connections = Enum.at(connections, i-1)
       neurons_count = Enum.at(layers_list, i)
       weights_count = Enum.at(layers_list, i-1)
-      
+
       {{w_ini, w_end}, {b_ini, b_end}} =
           act_funcs
           |> Enum.at(i-1)
@@ -157,7 +163,7 @@ defmodule NN4 do
           %Neurons{
             weights: weights,
             biases: biases,
-            connections: Enum.at(connections, i-1)
+            connections: connections
           }
         ],
         key
@@ -166,32 +172,76 @@ defmodule NN4 do
     |> elem(0)
   end
 
-  def train_model(
-        model,
-        inputs,
-        outputs,
-        count \\ 500,
-        opts \\ [],
-        total \\ 0,
-        cost \\ 99999)
-  def train_model(model, inputs, outputs, count, opts, _, cost)
-      when is_list(hd(inputs)) or is_list(hd(outputs)) do
-    lt_inputs = Enum.map(inputs, fn inp -> Nx.tensor(inp, type: :f32) end)
-    lt_outputs = Enum.map(outputs, fn outp -> Nx.tensor(outp, type: :f32) end)
-    train_model(model, lt_inputs, lt_outputs, count, opts, count, cost)
+  def model_from(model) do
+    %Model{
+      rate: model.rate,
+      act_funcs: model.act_funcs,
+      shape: model.shape,
+      map_output_func: model.map_output_func,
+      shuffle: model.shuffle,
+      batch_mode: model.batch_mode,
+      layers:        
+        Enum.map(model.layers, fn layer ->
+          # new_layer = 
+            Enum.reduce(layer, nil, fn neuron, neurons ->
+              if neurons do
+                w = Nx.stack([neuron.weights]) |> Nx.rename([:neuron, :weights])
+                b = Nx.stack([neuron.bias]) |> Nx.rename([:neuron, :biases])
+                %Neurons{
+                  weights: Nx.concatenate([neurons.weights, w]),
+                  biases: Nx.concatenate([neurons.biases, b]), 
+                  connections: neurons.connections ++ [neuron.connections]
+                }
+              else
+                %Neurons{
+                  weights: Nx.stack([neuron.weights]) |> Nx.rename([:neuron, :weights]),
+                  biases: Nx.stack([neuron.bias]) |> Nx.rename([:neuron, :biases]),
+                  connections: [neuron.connections]
+                }
+              end
+            end)
+        end)
+    }
   end
 
-  def train_model(model, 0, _, _, _, _, _), do: model
-  def train_model(model, count, lt_inputs, lt_outputs, opts, total, previous_cost) do
+  def train_model(model, inputs, outputs, count \\ 500, opts \\ [])
+  def train_model(model, inputs, outputs, count, opts) do
+    lt_inputs = 
+      if is_list(hd(inputs)) do
+        Enum.map(inputs, fn val -> Nx.tensor(val, type: :f32) end)
+      else
+        inputs
+      end
+
+    lt_outputs = 
+      if is_list(hd(outputs)) do
+        Enum.map(outputs, fn val -> Nx.tensor(val, type: :f32) end)
+      else
+        outputs
+      end
+    
     every = Keyword.get(opts, :every, 1)
-    model = %{
-      model |
+
+    %{model |
       rate: Keyword.get(opts, :rate, model.rate),
       batch_mode: Keyword.get(opts, :batch_mode, model.batch_mode),
       shuffle: Keyword.get(opts, :shuffle, model.shuffle),
       act_funcs: Keyword.get(opts, :act_funcs, model.act_funcs),
-      map_output_func: Keyword.get(opts, :map_output_func, model.map_output_func)
+      map_output_func: Keyword.get(opts, :map_output_func, model.map_output_func),
+      _temp:
+        model._temp
+        |> put_in([:count], count)
+        |> put_in([:total], count)
+        |> put_in([:every], every)
+        |> put_in([:cost], Float.max_finite())      
     }
+    |> train_model_h(lt_inputs, lt_outputs, count)
+  end
+
+  def train_model_h(model, _, _, 0), do: model
+  def train_model_h(model, lt_inputs, lt_outputs, count) do
+    model = %{model | _temp: put_in(model._temp, [:count], count)}
+    
     {lt_inputs, lt_outputs} =
       if model.shuffle do
         indices = Enum.shuffle(0..length(lt_inputs)-1)
@@ -206,14 +256,14 @@ defmodule NN4 do
     if not model.batch_mode do
       model
       |> back_propagation(lt_inputs, lt_outputs)
-      |> eval_and_report(lt_outputs, count, total, every)
+      |> eval_and_report(lt_outputs)
     else
       model
       |> back_propagation(lt_inputs, lt_outputs)
-      |> learn_batch(total - count)
-      |> eval_and_report(lt_outputs, count, total, every)
+      |> learn_batch()
+      |> eval_and_report(lt_outputs)
     end
-    |> train_model(count - 1, lt_inputs, lt_outputs, opts, total, previous_cost)
+    |> train_model_h(lt_inputs, lt_outputs, count - 1)
   end
 
   def run_model(model, input) when is_list(input) do
@@ -221,7 +271,7 @@ defmodule NN4 do
     run_model(model, t_input)
   end
   def run_model(model, t_inputs) do
-    feed_forward(model, [t_inputs]) |> hd()
+    feed_forward(model, [t_inputs]) |> hd() 
   end
 
   ################################################################################################
@@ -256,8 +306,8 @@ defmodule NN4 do
     {zas, new_t_outputs} =
       layers
       |> Enum.with_index()
-      |> Enum.reduce({[{t_inputs, t_inputs}], t_inputs}, fn {ln_layer, i}, {r_zas, t_inputs} ->
-        {_, a_output} = za = forward(ln_layer, t_inputs, Enum.at(act_funcs, i))
+      |> Enum.reduce({[{t_inputs, t_inputs}], t_inputs}, fn {layer, i}, {r_zas, t_inputs} ->
+        {_, a_output} = za = forward(layer, t_inputs, Enum.at(act_funcs, i))
         {[za | r_zas], a_output}
       end)
 
@@ -271,15 +321,15 @@ defmodule NN4 do
         other ->
           t1 = Nx.subtract(t_a, t_outputs)
           t2 = derivative(other, t_z, t_a, t_outputs)
-          Nx.multiply(t1, t2)
-      end
+          Nx.multiply(t1, t2) 
+      end 
 
     grads_list =
       layers
       |> Enum.reverse()
       |> backward(zas, deltas_o, {model.rate, r_act_funcs})
 
-    if not model.batch_mode do        
+    if not model.batch_mode do
       {learn(grads_list, model), new_t_outputs, grads_list}
     else
       {model, new_t_outputs, grads_list}
@@ -290,46 +340,54 @@ defmodule NN4 do
   defp backward(layers, zas, deltas, model_params, grads_list \\ [])
   defp backward(_, [], _, _, grads_list), do: grads_list
   defp backward(
-      [ln_layer | layers],
+      [layer | layers],
       [{t_z, t_a} | zas],
       deltas,
       {rate, [act_func | act_funcs]},
       grads_list) do
 
     # deltas |> IO.inspect(label: "DELTAS")
+    # t_a |> IO.inspect(label: "T_A")
+    # zas |> IO.inspect(label: "ZAS")
     # layers |> IO.inspect(label: "LAYERS")
-    # ln_layer |> IO.inspect(label: "LAYER")
+    # layer |> IO.inspect(label: "LAYER")
 
     grads =
-      ln_layer
-      |> Enum.with_index()
-      |> Enum.map(fn {n_layer, i} ->
-        delta = Nx.take(deltas, i)
-        {t_a |> Nx.take(Nx.tensor(n_layer.connections)) |> Nx.multiply(delta), delta}
+      Enum.reduce(0..Nx.size(deltas)-1, nil, fn
+        i,  nil ->
+          delta = Nx.take(deltas, i)
+          t = Nx.multiply(t_a, delta)
+          t = t  |> Nx.reshape({1,Nx.size(t)})
+          {t,  Nx.reshape(delta, {1,1})}
+        i, {gw, gb} ->
+          delta = Nx.take(deltas, i)
+          t = Nx.multiply(t_a, delta)
+          t = t  |> Nx.reshape({1,Nx.size(t)})
+          {
+            Nx.concatenate([gw, t]),
+            Nx.concatenate([gb, delta |> Nx.reshape({1,1})])
+          }
       end)
-      # |> IO.inspect(label: "GRADS")
+      |> IO.inspect(label: "GRADS")
 
-    derivative_z = derivative(act_func, t_z, t_a)
+    derivative_z = derivative(act_func, t_z, t_a) 
 
     deltas =
       if length(layers) > 0 do
-        ln_layer
-        |> Enum.with_index()
-        |> Enum.reduce(nil, fn {n_layer, i}, acc ->
-          d = n_layer.weights |> Nx.multiply(Nx.take(deltas, i)) |> Nx.multiply(derivative_z)
-          acc && Nx.concatenate([acc, d]) || d
-        end)
-        # |> IO.inspect(label: "DELTAS")
+        ws = layer.weights |> Nx.transpose()
+        ws |> Nx.dot(deltas) |> Nx.multiply(derivative_z) 
       else
         nil
       end
+      # |> IO.inspect(label: "DELTAS")
+    
     # IO.inspect "----------------------------------------"
     backward(layers, zas, deltas, {rate, act_funcs}, [grads | grads_list])
   end
 
   ## return: {model, new_lt_outputs, accum_grads}
-  defp learn_batch({model, new_lt_outputs, accum_grads}, iteration) do
-    grads_count = length(accum_grads)
+  defp learn_batch({model, new_lt_outputs, accum_grads}) do
+    grads_count = length(accum_grads) 
     [first_layers_list | accum_grads] = accum_grads
 
     grads =
@@ -337,67 +395,50 @@ defmodule NN4 do
       |> Enum.reduce(first_layers_list, fn layers_list, acc_layers_list ->
         acc_layers_list
         |> Enum.zip(layers_list)
-        |> Enum.map(fn {grads_accum, grads_layer} ->
-          grads_accum
-          |> Enum.zip(grads_layer)
-          |> Enum.map(fn {{aws, ab}, {gws, gb}} ->
-            {Nx.add(aws, gws), Nx.add(ab, gb)}
-          end)
+        |> Enum.map(fn {{aws, abs}, {gws, gbs}} ->
+            {Nx.add(aws, gws), Nx.add(abs, gbs)}
         end)
       end)
+      |> Enum.map(fn {gws, gbs} ->
+        {Nx.divide(gws, grads_count), Nx.divide(gbs, grads_count)}
+      end)
 
-    {learn(grads, model, grads_count, iteration), new_lt_outputs, grads}
+    {learn(grads, model), new_lt_outputs, grads}
   end
 
   ## return model
-  defp learn(grads, model, grads_count \\ 1, _iteration \\ 1) do
+  defp learn(grads, model) do
     %{layers: layers} = model
     %{model |
       layers:
         layers
         |> Enum.zip(grads)
-        |> Enum.map(fn {ln_layer, l_grads} ->
-          ln_layer
-          |> Enum.zip(l_grads)
-          |> Enum.map(fn {n_layer, {grad_ws, grad_b}} ->
-            ws =
-              n_layer.weights
-              |> Nx.subtract(
-                grad_ws
-                |> Nx.divide(grads_count)
-                |> Nx.dot(model.rate) # * (0.99**iteration))
-              )
+        |> Enum.map(fn {layer, {gws, gbs}} ->
+          ws =
+            layer.weights
+            |> Nx.subtract(Nx.dot(gws, model.rate))
 
-            b =
-              n_layer.bias
-              |> Nx.rename([nil])
-              |> Nx.subtract(
-                grad_b
-                |> Nx.divide(grads_count)
-                |> Nx.dot(model.rate) # * (0.99**iteration))
-              )
-              |> Nx.rename([:bias])
-            %{n_layer | weights: ws, bias: b}
-          end)
-        end)
+          bs =
+            layer.biases
+            |> Nx.subtract(Nx.dot(gbs, model.rate))
+          %{layer | weights: ws, biases: bs}
+        end)        
     }
   end
 
-  defp forward(ln_layer, t_input, act_func) do
-    t_output =
-      Enum.map(ln_layer, fn neuron ->
-        t_input
-        |> Nx.take(Nx.tensor(neuron.connections))
-        |> Nx.multiply(neuron.weights)
-        |> Nx.sum(axes: [:weights])
-        |> Nx.add(neuron.bias)
-        |> Nx.tensor()
-      end)
-      |> Nx.concatenate()
-      |> Nx.rename([nil])
+  ## return: {z, a} -> {layer_output, activation(layer_output)}
+  defp forward(layer, t_input, act_func) do
+    z =
+      t_input
+      |> Nx.multiply(layer.weights)
+      |> Nx.sum(axes: [:weights])
+      |> Nx.stack()
+      |> Nx.transpose()
+      |> Nx.add(layer.biases)
+      |> Nx.transpose()
+      |> Nx.reshape({Nx.size(layer.biases)})
 
-    # {z, a} -> {layer_output, activation(layer_output)}
-    {t_output, apply(Activation, act_func, [t_output])}
+    {z, apply(Activation, act_func, [z])}
   end
 
   defp feed_forward(%Model{} = model, lt_inputs),
@@ -407,18 +448,19 @@ defmodule NN4 do
     [feed_forward_h(layers, t_input, act_funcs) | feed_forward(layers, lt_inputs, act_funcs)]
   end
   defp feed_forward_h([], t_input, _), do: t_input
-  defp feed_forward_h([ln_layer | layers], t_input, [act_func | act_funcs]) do
-    {_, new_t_input} = forward(ln_layer, t_input, act_func)
+  defp feed_forward_h([layer | layers], t_input, [act_func | act_funcs]) do
+    {_, new_t_input} = forward(layer, t_input, act_func)
     feed_forward_h(layers, new_t_input, act_funcs)
   end
 
   defp eval_and_report(
-         {model, lt_new_outputs, _}, lt_outputs, count, total, every)
-       when rem(count, every) == 0 or count == total do
+         {%{_temp: %{count: count, total: total, every: every}} = model, lt_new_outputs, _},
+         lt_outputs
+       ) when rem(count, every) == 0 or count == total do
     output_act_func = model.act_funcs |> Enum.reverse() |> hd()
     cost = calc_cost(output_act_func, lt_new_outputs, lt_outputs)
     IO.puts "Iteration: #{total - count + 1} - Cost: #{cost}"
-    model
+    %{model | _temp: put_in(model._temp, [:cost], cost)}
   end
 
   ## return [ [ [],[],... ], [ [],[],... ] ]
@@ -439,7 +481,7 @@ defmodule NN4 do
     ]
   end
 
-  
+
   defp calc_cost(act_func, lt_new_outputs, lt_outputs, sum \\ 0, count \\ 0)
   ## for softmax
   defp calc_cost(:softmax, lt_new_outputs, lt_outputs, _sum, _count) do
