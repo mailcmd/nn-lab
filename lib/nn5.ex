@@ -249,6 +249,7 @@ defmodule NN5 do
   end
 
   defp go_backwards([{t_zs, t_as} | l_forwards], model, tt_outputs) do
+    {batch_size, _} = Nx.shape(tt_outputs)
     act_func = model.act_funcs |> Enum.reverse() |> hd()
     deltas_outputs = 
       case act_func do
@@ -261,17 +262,18 @@ defmodule NN5 do
     
     model.layers
     |> Enum.reverse()
-    |> backward(l_forwards, deltas_outputs, model.rate)
+    |> backward(l_forwards, deltas_outputs, model.rate, batch_size)
   end
 
   ## return: grads_list
-  defp backward(layers, l_forwards, deltas, rate, grads_list \\ [])
-  defp backward(_, [], _, _, grads_list), do: grads_list
+  defp backward(layers, l_forwards, deltas, rate, batch_size, grads_list \\ [])
+  defp backward(_, [], _, _, _, grads_list), do: grads_list
   defp backward(
       [layer | layers],
       [{t_zs, t_as} | l_forwards],
       deltas,
       rate,
+      batch_size,
       grads_list) do
 
     # deltas |> IO.inspect(label: "DELTAS")
@@ -281,7 +283,11 @@ defmodule NN5 do
     # layer |> IO.inspect(label: "LAYER")
 
     grads = {
-      deltas |> Nx.transpose() |> Nx.rename([nil,nil]) |> Nx.dot(t_as),
+      deltas
+      |> Nx.transpose()
+      |> Nx.rename([nil,nil])
+      |> Nx.dot(t_as)
+      |> Nx.divide(batch_size),
       deltas
     }
     

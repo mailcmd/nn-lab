@@ -291,7 +291,7 @@ AVG ERROR: 4.00898538588379e-6
   {[0, 0, 0], [0], [0], [0.002044085180386901]}
 ]
 
-    
+
 NEXT EXPERIMENTS
 ================
 
@@ -380,7 +380,7 @@ outputs = outputs |> Enum.map(fn [v] -> v == 0 && [-1] || [1] end)
 inputs = inputs |> Enum.shuffle() |> Enum.take(16)
 outputs = inputs |> Enum.map(&Enum.sum/1) |> Enum.map(&(&1 >= 3 && [1] || [-1]))
 
-[ 
+[
   [ // first_layers_list
     [ // grads_list
       {ws, b},
@@ -424,7 +424,7 @@ x_train = train_indices |> Enum.map(fn i -> Enum.at(features, i) end)
 x_test = test_indices |> Enum.map(fn i -> Enum.at(features, i) end)
 y_train = train_indices |> Enum.map(fn i -> Enum.at(labels, i) end)
 y_test = test_indices |> Enum.map(fn i -> Enum.at(labels, i) end)
-    
+
 ## normalize inputs
 max = Nx.concatenate([Nx.tensor(x_train), Nx.tensor(x_test)]) |> Nx.reduce_max(axes: [0])
 min = Nx.concatenate([Nx.tensor(x_train), Nx.tensor(x_test)]) |> Nx.reduce_min(axes: [0])
@@ -460,7 +460,7 @@ Test 1:
 Iteration: 2000 - Cost: 0.1876574675242106
 HITS: 90.0% - AVG COST: 0.05579695788263861
 
-Test 2: 
+Test 2:
 Iteration: 2000 - Cost: 0.16073145866394042
 HITS: 96.66666666666667% - AVG COST: 0.049029032673246965
 
@@ -470,7 +470,7 @@ HITS: 96.66666666666667% - AVG COST: 0.049482178071048113
 
 ## NN4 (tensors versions)
 
-[ 
+[
   %Neurons{
     weights: Nx.tensor(
         [w,w,w,w,w,w,w...,w],    \
@@ -491,7 +491,7 @@ HITS: 96.66666666666667% - AVG COST: 0.049482178071048113
         [0,1,2,3...,X],     |
         [0,1,2,3...,X],     |
         [0,1,2,3...,X],     |
-        [0,1,2,3...,X],     |- N connections 
+        [0,1,2,3...,X],     |- N connections
         [0,1,2,3...,X],     |
         [0,1,2,3...,X],     |
         ...                 |
@@ -533,19 +533,19 @@ model2 = NN4.train_model(model, inputs, outputs, 100, rate: 0.2)
 
 x_train = images_binary |> Nx.from_binary(images_type) |> Nx.reshape({60000,784}) |> Nx.to_batched(10000) |> Enum.at(0) |> Nx.to_list() |> Enum.take(1) |> Enum.map(&Nx.tensor/1)
 
-y_train = labels_binary |> :binary.bin_to_list() |> Enum.take(10000) |> Enum.map(fn n -> Integer.to_string(n,2) |> String.pad_leading(10, "0") |> String.split("", trim: true) |> Enum.map(&String.to_integer/1) end)  |> Enum.take(1)  |> Enum.map(&Nx.tensor/1) 
+y_train = labels_binary |> :binary.bin_to_list() |> Enum.take(10000) |> Enum.map(fn n -> Integer.to_string(n,2) |> String.pad_leading(10, "0") |> String.split("", trim: true) |> Enum.map(&String.to_integer/1) end)  |> Enum.take(1)  |> Enum.map(&Nx.tensor/1)
 
 
 x_test = images_binary |> Nx.from_binary(images_type) |> Nx.reshape({60000,784}) |> Nx.to_batched(10000) |> Enum.at(1) |> Nx.to_list() |> Enum.take(1000) |> Enum.map(&Nx.tensor/1)
 
-y_test = labels_binary |> :binary.bin_to_list() |> Enum.drop(10000) |> Enum.take(1000) |> Enum.map(fn n -> Integer.to_string(n,2) |> String.pad_leading(10, "0") |> String.split("", trim: true) |> Enum.map(&String.to_integer/1) end)  |> Enum.map(&Nx.tensor/1) 
+y_test = labels_binary |> :binary.bin_to_list() |> Enum.drop(10000) |> Enum.take(1000) |> Enum.map(fn n -> Integer.to_string(n,2) |> String.pad_leading(10, "0") |> String.split("", trim: true) |> Enum.map(&String.to_integer/1) end)  |> Enum.map(&Nx.tensor/1)
 
 
 mapf = fn o -> o |> Enum.map(&Integer.to_string/1) |> Enum.join("") |> String.to_integer(2) end
 model = NN5.build_model({784, [128, 64], 10}, act_func: :tanh, output_act_func: :sigmoid, map_output_func: mapf)
 
 model2 = NN4.train_model(model, x_train, y_train, 1)
-    
+
 ## MINIST BATCH
 
 model = NN5.build_model({784, [128, 64], 10}, act_func: :tanh, output_act_func: :sigmoid, map_output_func: mapf)
@@ -581,22 +581,22 @@ Suppose X = 6 and this is the first batch:
   [0,1,0,0]  # Input6
 ]
 
-And then you have in the hidden layer 3 neurons, everyone with 4 weights: 
+And then you have in the hidden layer 3 neurons, everyone with 4 weights:
 [
   [w1, w2, w3, w4], # Neuron1
   [w1, w2, w3, w4], # Neuron2
   [w1, w2, w3, w4]  # Neuron3
 ]
 
-In my implementation, when I do the forward I take the first input of the train batch, multply by the weights and sum the bias. I repeat the same althroug the rest of the layers until the output. Then take the second input and I do the forward for it, and so on. 
+In my implementation, when I do the forward I take the first input of the train batch, multply by the weights and sum the bias. I repeat the same althroug the rest of the layers until the output. Then take the second input and I do the forward for it, and so on.
 
-There is using Nx a way to make all the inputs of a batch a operate agains weights at the same time? 
+There is using Nx a way to make all the inputs of a batch a operate agains weights at the same time?
 
 
-Ok. Now I can do the forward, but I have a question about backward. 
-In the case of the MINIST, when I calculate the deltas_outputs to start backward, now I get a batch of 32 deltas (shape {32,10}), one for final outputs of the batch of 32 inputs. 
+Ok. Now I can do the forward, but I have a question about backward.
+In the case of the MINIST, when I calculate the deltas_outputs to start backward, now I get a batch of 32 deltas (shape {32,10}), one for final outputs of the batch of 32 inputs.
 
-You said that the formule to calculate the next deltas for the next hidden layer, I must do: 
+You said that the formule to calculate the next deltas for the next hidden layer, I must do:
 
 W2^T · δ_output * derivative(z_hidden)
 
@@ -606,7 +606,65 @@ Second question: the δ_output now are the deltas of the batch of 32 inputs, rig
 
 Third question: if W2 are the weights of the output layer and I use it to calculate the δ_hidden, W2 have shape {10,64}?
 
-Now, after the forward backward of the first batch of 32 inputs, I got 3 pairs of gradients (one for weights and one for biases). Each of the gradients for weights has respectively these shapes: 
-{128, 784}, {64,128}, {10,64}. Is that right? 
+Now, after the forward backward of the first batch of 32 inputs, I got 3 pairs of gradients (one for weights and one for biases). Each of the gradients for weights has respectively these shapes:
+{128, 784}, {64,128}, {10,64}. Is that right?
 
 What should I do with these gradients? How I apply them to the layers to learn?
+
+-------------------
+
+I need to understand well something.
+0. Model 784-128-64-10
+1. I have a batch of 32 inputs, a tensor shape {32, 784}
+2. I make the forward of each 32 inputs and get a batch of 32 forward path (I get it in reverse
+   for better process in the backward):
+   {
+     {z_tensor{32,10}, a_tensor{32, 10}},
+     {z_tensor{32,64}, a_tensor{32, 64}},
+     {z_tensor{32,128}, a_tensor{32, 128}}
+   }
+Is this ok until here?
+
+-- 
+
+When I start to do the backward, first I calculate the delta_output. For that (gessing sigmoid) I do the following:
+```
+  # tt_output is the expected output of the bach of 32 inputs
+  t1 = Nx.subtract(a_tensor{32, 10}, tt_output)
+  t2 = derivative(a_tensor{32, 10})
+  delta_output = Nx.multiply(t1, t2)
+```
+
+delta_output is a tensor{32, 10}
+
+is this ok?
+
+--
+
+Now I start the backward. I am doing this: 
+```
+  t1 = Nx.transpose(delta_output) # t1 is {10, 32}
+  gradients_output = Nx.dot(t1, a_tensor{32, 64})
+```
+
+Is this ok? 
+
+-- 
+
+Now I calculate: 
+```
+derivative_z = derivative(a_tensor{32,64}) # hidden layer 64 neurons
+
+```
+
+and then the deltas of the this hiddel layer:
+```
+t1 = Nx.dot(delta_output{32, 10}, output_layer.weights{10, 64}) # t1 is {32,64}
+delta_hidden64 = Nx.multiply(t1{32,64}, derivative_z{32,64})
+```
+
+delta_hidden64 is {32,64}
+
+Is this right?
+
+
