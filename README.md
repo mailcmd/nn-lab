@@ -548,6 +548,8 @@ model2 = NN4.train_model(model, x_train, y_train, 1)
     
 ## MINIST BATCH
 
+model = NN5.build_model({784, [128, 64], 10}, act_func: :tanh, output_act_func: :sigmoid, map_output_func: mapf)
+
 {train_images, train_labels} = Scidata.MNIST.download()
 
 ### Normalize and batch images
