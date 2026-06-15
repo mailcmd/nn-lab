@@ -531,7 +531,7 @@ model2 = NN4.train_model(model, inputs, outputs, 100, rate: 0.2)
 {images_binary, images_type, images_shape} = train_images
 {labels_binary, labels_type, labels_shape} = train_labels
 
-x_train = images_binary |> Nx.from_binary(images_type) |> Nx.reshape({60000,784}) |> Nx.to_batched(10000) |> Enum.at(0) |> Nx.to_list() |> Enum.take(1) |> Enum.map(&Nx.tensor/1)
+x_train = images_binary |> Nx.from_binary(images_type) |> Nx.reshape({60000,784}) |> Nx.to_batched(10000) |> Enum.at(0) # |> Nx.to_list() |> Enum.take(1) |> Enum.map(&Nx.tensor/1)
 
 y_train = labels_binary |> :binary.bin_to_list() |> Enum.take(10000) |> Enum.map(fn n -> Integer.to_string(n,2) |> String.pad_leading(10, "0") |> String.split("", trim: true) |> Enum.map(&String.to_integer/1) end)  |> Enum.take(1)  |> Enum.map(&Nx.tensor/1)
 
@@ -564,11 +564,12 @@ batched_labels = labels_binary |> Nx.from_binary(labels_type) |> Nx.new_axis(-1)
 
 ### For test
 
-test_images =  images_binary |> Nx.from_binary(images_type) |> Nx.reshape({60000,784}) |> Nx.divide(255) |> Nx.to_batched(1000) |> Enum.at(10) |> Nx.to_batched(32)
+test_images =  images_binary |> Nx.from_binary(images_type) |> Nx.reshape({60000,784}) |> Nx.divide(255) |> Nx.to_batched(1000) |> Enum.at(10) # |> Nx.to_batched(32)
 
-test_labels = labels_binary |> Nx.from_binary(labels_type) |> Nx.new_axis(-1) |> Nx.equal(Nx.tensor(Enum.to_list(0..9))) |> Nx.to_batched(1000) |> Enum.at(10) |> Nx.to_batched(32)
+test_labels = labels_binary |> Nx.from_binary(labels_type) |> Nx.new_axis(-1) |> Nx.equal(Nx.tensor(Enum.to_list(0..9))) |> Nx.to_batched(1000) |> Enum.at(10) # |> Nx.to_batched(32)
 
 
+--------------------------------------------------------------
 Ok, now the important question:
 Suppose you have a model with shape 4-3-1 (just an example). So you will have the train datas separated in N batchs of size X:
 Suppose X = 6 and this is the first batch:
@@ -667,4 +668,23 @@ delta_hidden64 is {32,64}
 
 Is this right?
 
+-- 
 
+Now I step back to do the backward in the layer 128. 
+First I calculate the deltas of the layer 128:
+
+```
+  t1 = Nx.transpose(delta_hidden64) # t1 is {64, 32}
+  gradients_weights_layer64 = Nx.dot(t1, a_tensor{32, 128}) |> Nx.divice(batch_size)
+  
+  gradients_weights128_layer64 is {64, 128}
+  
+```
+
+Is this right?
+
+-- 
+
+I think I can understand the process but I have a question. 
+
+I you instead of process a batch of 32 inputs process each input individually you will get 32 gradients individually and apply them individually. But here we are averaging gradients and applying them in one pass. Isn't there a loss of learned information when applying gradient averages?
