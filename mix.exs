@@ -22,6 +22,7 @@ defmodule NN.MixProject do
   defp deps do
     [
       {:nx, "~> 0.9"},
+      {:exla, "~> 0.2"},
       {:scidata, "~> 0.1"}
     ]
   end
