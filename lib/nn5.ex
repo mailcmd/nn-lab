@@ -55,21 +55,23 @@ defmodule NN5 do
       IO.puts "HITS: #{100 * hits / length(inputs)}% - AVG COST: #{costs / length(inputs)}"
       list
     end
+    
     map = model.map_output_func
-
     output_act_func = model.act_funcs |> Enum.reverse() |> hd()
+    {size, _} = Nx.shape(inputs)
 
     [
       {"input", "expected", "rounded out", "raw out"}
       |
-        inputs
-        |> Enum.zip(outputs)
-        |> Enum.reduce({[], 0, 0}, fn {inp, out}, {list, hits, costs} ->
-          rv = model |> run_model(inp) 
-          cost = calc_cost(output_act_func, [rv], [Nx.tensor(out)])
-          rv = rv |> Nx.to_list()
-          exp_out = Enum.map(out, fn v -> map.(v) end)
-          got_out = Enum.map(rv, fn v -> map.(v) end)
+        0..size-1
+        |> Enum.reduce({[], 0, 0}, fn i, {list, hits, costs} ->
+          inp = Nx.take(inputs, i) 
+          outp = Nx.take(outputs, i) 
+          rv = model |> run_model(inp)
+          # cost = calc_cost(output_act_func, Nx.tensor(rv), outp)
+          cost = 0
+          exp_out = Nx.to_list(outp)
+          got_out = rv
           {
             [{inp, exp_out, got_out, rv} | list],
             hits + (exp_out == got_out && 1 || 0),
@@ -303,7 +305,7 @@ defmodule NN5 do
       end
     
     # # IO.inspect "----------------------------------------"
-    backward(layers, l_forwards, deltas, rate, [grads | grads_list])
+    backward(layers, l_forwards, deltas, rate, batch_size, [grads | grads_list])
   end
 
   ## return: {model, new_lt_outputs, accum_grads}
