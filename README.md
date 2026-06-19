@@ -755,11 +755,11 @@ NN5.test(model_t, inputs, outputs, :details)
          
 ### y = x^2
 
-inputs = Enum.map(-99..100, fn n -> (n/100) end) |> Nx.tensor() |> Nx.new_axis(0)
-outputs = Enum.map(-99..100, fn n -> (n/100)**2 end) |> Nx.tensor() |> Nx.new_axis(0) 
+inputs = Enum.map(-99..100, fn n -> (n/100) end) |> Nx.tensor() |> Nx.new_axis(1)
+outputs = Enum.map(-99..100, fn n -> (n/100)**2 end) |> Nx.tensor() |> Nx.new_axis(1) 
 
-test_inputs = Enum.map(Range.to_list(-124..-100) ++ Range.to_list(101..125), fn n -> (n/100) end) |> Nx.tensor() 
-test_outputs = Enum.map(Range.to_list(-124..-100) ++ Range.to_list(101..125), fn n -> (n/100)**2 end) |> Nx.tensor() 
+test_inputs = Enum.map(Range.to_list(-124..-100) ++ Range.to_list(101..125), fn n -> (n/100) end) |> Nx.tensor() |> Nx.new_axis(1) 
+test_outputs = Enum.map(Range.to_list(-124..-100) ++ Range.to_list(101..125), fn n -> (n/100)**2 end) |> Nx.tensor() |> Nx.new_axis(1) 
 
 
 model1 = NN5.build_model({1,[10],1}, act_func: :none)
