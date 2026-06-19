@@ -755,12 +755,33 @@ NN5.test(model_t, inputs, outputs, :details)
          
 ### y = x^2
 
-inputs = Enum.map(-99..100, fn n -> (n/100) end) |> Nx.tensor() |> Nx.new_axis(1)
-outputs = Enum.map(-99..100, fn n -> (n/100)**2 end) |> Nx.tensor() |> Nx.new_axis(1) 
 
-test_inputs = Enum.map(Range.to_list(-124..-100) ++ Range.to_list(101..125), fn n -> (n/100) end) |> Nx.tensor() |> Nx.new_axis(1) 
-test_outputs = Enum.map(Range.to_list(-124..-100) ++ Range.to_list(101..125), fn n -> (n/100)**2 end) |> Nx.tensor() |> Nx.new_axis(1) 
+test_inputs = Enum.map(1..50, fn _ -> :random.uniform()*2-1 end) |> Nx.tensor() |> Nx.new_axis(1) 
+test_outputs = Nx.pow(test_inputs, 2)
 
+inputs = Enum.map(1..200, fn _ -> :random.uniform()*2-1 end) |> Nx.tensor() |> Nx.new_axis(1) 
+outputs = Nx.pow(inputs, 2)
 
 model1 = NN5.build_model({1,[10],1}, act_func: :none)
-model2 = NN5.train_model(model1, inputs, output, )
+model1 = NN5.build_model({1,[10],1}, act_func: :tanh)
+
+model2 = NN5.train_model(model1, inputs, outputs, 100, rate: 0.1, apply_momentum: true)
+
+NN5.test(model2, test_inputs, test_outputs)
+
+NN5.run_model(model2, [0.5])
+
+rate
+
+
+
+
+
+
+
+
+
+
+
+
+

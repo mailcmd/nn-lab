@@ -55,7 +55,8 @@ defmodule NN5 do
 
   @default_rate 0.1
   @default_act_func :tanh
-
+  @default_data_type :f32
+  
   def test(model, inputs, outputs, report_type \\ :summary) do
     {size, _} = Nx.shape(inputs)
     fun = fn {list, hits, costs} ->
@@ -125,13 +126,14 @@ defmodule NN5 do
     output_act_func = Keyword.get(opts, :output_act_func, act_func)
     act_funcs = Enum.map(1..length(hidden_layers)//1, fn _ -> act_func end) ++ [output_act_func]
     map_output_func = Keyword.get(opts, :map_output_func, fn l -> Enum.map(l, &round/1) end)
+    data_type = Keyword.get(opts, :data_type, @default_data_type)
 
     %Model{
       rate: Keyword.get(opts, :rate, @default_rate),
       initial_rate: Keyword.get(opts, :initial_rate, @default_rate),
       act_funcs: act_funcs,
       shape: List.flatten([inputs, layers, outputs]),
-      layers: build_model_layers(total_layers, act_funcs, outputs),
+      layers: build_model_layers(total_layers, act_funcs, outputs, data_type),      
       map_output_func: map_output_func,
       stop_thresold: Keyword.get(opts, :stop_thresold, 0),
       apply_momentum: Keyword.get(opts, :apply_momentum, false),
@@ -140,13 +142,13 @@ defmodule NN5 do
       _temp: %{
         count: 0,
         total: 0,
-        cost: Float.max_finite(),
+        cost: 0,
         every: 1
       }
     }
   end
 
-  defp build_model_layers(layers_list, act_funcs, outputs) do
+  defp build_model_layers(layers_list, act_funcs, outputs, data_type) do
     key = Nx.Random.key(System.os_time())
     # key = Nx.Random.key(1984)
     Enum.reduce(1..length(layers_list)-1, {[], key}, fn i, {layers, key} ->
@@ -160,16 +162,16 @@ defmodule NN5 do
         Nx.Random.uniform(
           key,
           w_ini, w_end,
-          shape: {neurons_count, weights_count}
-          # names: [:neuron, :weights]
+          shape: {neurons_count, weights_count},
+          type: data_type
         )
 
       {biases, key} =
         Nx.Random.uniform(
           key,
           b_ini, b_end,
-          shape: {neurons_count, 1}
-          # names: [:neuron, :biases]
+          shape: {neurons_count, 1},
+          type: data_type
         )
 
       {
@@ -412,6 +414,17 @@ defmodule NN5 do
   end
 
   defp tune_model(model, opts) do
+    Keyword.validate!(opts, [
+      :rate, 
+      :initial_rate, 
+      :shuffle, 
+      :act_funcs, 
+      :map_output_func, 
+      :stop_thresold, 
+      :apply_momentum, 
+      :learning_decay, 
+      :apply_gradient_clipping    
+    ])
     every = Keyword.get(opts, :every, 1)
     %{model |
       rate: Keyword.get(opts, :rate, model.rate),
@@ -421,9 +434,9 @@ defmodule NN5 do
       map_output_func: Keyword.get(opts, :map_output_func, model.map_output_func),
       stop_thresold: Keyword.get(opts, :stop_thresold, model.stop_thresold),
       apply_momentum: Keyword.get(opts, :apply_momentum, model.apply_momentum),
+      learning_decay: Keyword.get(opts, :learning_decay, model.learning_decay),
       apply_gradient_clipping:
         Keyword.get(opts, :apply_gradient_clipping, model.apply_gradient_clipping),
-      learning_decay: Keyword.get(opts, :learning_decay, model.learning_decay),
       _temp: put_in(model._temp, [:every], every)
     }
   end
@@ -505,7 +518,7 @@ defmodule NN5 do
   defp derivative(:softmax, _t_z, t_a, t_output) do
     Nx.subtract(t_a, t_output)
   end
-  defp derivative(:none, t_z, _t_a, _t_output) do
-    t_z
+  defp derivative(:none, _t_z, _t_a, _t_output) do
+    1
   end
 end

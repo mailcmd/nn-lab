@@ -1,0 +1,12 @@
+{application,nn,
+             [{modules,['Elixir.NN3','Elixir.NN3.Activation',
+                        'Elixir.NN3.Model','Elixir.NN3.Neuron','Elixir.NN4',
+                        'Elixir.NN4.Activation','Elixir.NN4.Model',
+                        'Elixir.NN4.Neurons','Elixir.NN5',
+                        'Elixir.NN5.Activation','Elixir.NN5.Layer',
+                        'Elixir.NN5.Model']},
+              {optional_applications,[]},
+              {applications,[kernel,stdlib,elixir,logger,nx,exla,scidata]},
+              {description,"nn"},
+              {registered,[]},
+              {vsn,"0.1.0"}]}.
